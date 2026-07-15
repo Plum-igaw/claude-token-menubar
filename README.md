@@ -4,6 +4,8 @@ macOS 메뉴바에서 Claude 사용량을 한눈에 확인하세요.
 
 노치 옆에 짧게, 클릭하면 자세히.
 
+아이디어 https://zoey.day/blog?post=93nzyxmd8ewg8mwk6r45
+
 ## 미리보기
 
 ```
