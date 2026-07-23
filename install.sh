@@ -1,13 +1,14 @@
 #!/bin/bash
-# Claude Menubar Monitor - One-click installer
+# Claude Token Menubar - One-click installer
 # Shows Claude Code usage (session/weekly) in macOS menu bar via SwiftBar
 set -e
 
 REPO_URL="https://raw.githubusercontent.com/Plum-igaw/claude-token-menubar/main"
 PLUGIN_DIR="$HOME/swiftbar-plugins"
+LAUNCH_AGENTS="$HOME/Library/LaunchAgents"
 
 echo ""
-echo "  💚 Claude Menubar Monitor - Installer"
+echo "  💚 Claude Token Menubar - Installer"
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 
@@ -38,11 +39,42 @@ echo "  ✓ Plugin folder: $PLUGIN_DIR"
 # --- Step 4: Download plugin files ---
 echo "  ⬇ Downloading plugin..."
 curl -sL "$REPO_URL/claude-usage.5m.sh" -o "$PLUGIN_DIR/claude-usage.5m.sh"
-curl -sL "$REPO_URL/claude-usage-helper.py" -o "$PLUGIN_DIR/claude-usage-helper.py"
-chmod +x "$PLUGIN_DIR/claude-usage.5m.sh" "$PLUGIN_DIR/claude-usage-helper.py"
+curl -sL "$REPO_URL/claude-usage-helper.py" -o "$PLUGIN_DIR/.claude-usage-helper.py"
+curl -sL "$REPO_URL/claude-token-refresh.py" -o "$PLUGIN_DIR/.claude-token-refresh.py"
+chmod +x "$PLUGIN_DIR/claude-usage.5m.sh"
 echo "  ✓ Plugin installed"
 
-# --- Step 5: Check Claude Code login ---
+# --- Step 5: Setup auto token refresh (every 4 hours) ---
+echo "  ⬇ Setting up auto token refresh..."
+mkdir -p "$LAUNCH_AGENTS"
+cat > "$LAUNCH_AGENTS/com.claude.token-refresh.plist" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.claude.token-refresh</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>${PLUGIN_DIR}/.claude-token-refresh.py</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>14400</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/claude-token-refresh.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/claude-token-refresh.log</string>
+</dict>
+</plist>
+EOF
+launchctl unload "$LAUNCH_AGENTS/com.claude.token-refresh.plist" 2>/dev/null || true
+launchctl load "$LAUNCH_AGENTS/com.claude.token-refresh.plist"
+echo "  ✓ Auto token refresh enabled (every 4h)"
+
+# --- Step 6: Check Claude Code login ---
 echo ""
 if security find-generic-password -s "Claude Code-credentials" -w &>/dev/null; then
     echo "  ✓ Claude Code credentials found"
@@ -58,17 +90,17 @@ else
     fi
     echo ""
     echo "  Log in with your Claude account, then Ctrl+C to exit."
+    echo "  (One-time only — token refreshes automatically after this)"
 fi
 
-# --- Step 6: Launch SwiftBar ---
+# --- Step 7: Launch SwiftBar ---
 echo ""
 echo "  🚀 Launching SwiftBar..."
-echo ""
 
-# Set plugin directory preference if first launch
 defaults write com.ameba.SwiftBar PluginDirectory "$PLUGIN_DIR" 2>/dev/null || true
 open /Applications/SwiftBar.app
 
+echo ""
 echo "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo "  ✅ Done! Look for 💚 in your menu bar."
 echo ""
@@ -76,4 +108,7 @@ echo "  Icons:"
 echo "    💚 = under 60% (chill)"
 echo "    🧡 = 60-89% (watch it)"
 echo "    ❤️‍🔥 = 90%+ (danger zone)"
+echo ""
+echo "  Token auto-refreshes every 4 hours."
+echo "  No need to keep Claude Code CLI open."
 echo ""
