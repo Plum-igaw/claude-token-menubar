@@ -8,6 +8,8 @@ import os
 import time
 from datetime import datetime
 
+import math
+
 CACHE_FILE = os.path.expanduser("~/.claude-usage-cache.json")
 CACHE_MAX_AGE = 240  # 4 minutes
 
@@ -162,11 +164,11 @@ def parse_usage(data):
     weekly_reset = 0
 
     if "five_hour" in data:
-        session_pct = int(round(data["five_hour"].get("utilization", 0) or 0))
+        session_pct = math.ceil(data["five_hour"].get("utilization", 0) or 0)
         session_reset = iso_to_epoch(data["five_hour"].get("resets_at", ""))
 
     if "seven_day" in data:
-        weekly_pct = int(round(data["seven_day"].get("utilization", 0) or 0))
+        weekly_pct = math.ceil(data["seven_day"].get("utilization", 0) or 0)
         weekly_reset = iso_to_epoch(data["seven_day"].get("resets_at", ""))
 
     # Fallback: limits array
