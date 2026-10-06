@@ -1,99 +1,50 @@
 #!/usr/bin/env python3
-"""Auto-refresh Claude Code OAuth token before it expires."""
+"""Auto-refresh Claude Code OAuth token by running claude CLI briefly."""
 import subprocess
-import json
-import urllib.request
-import urllib.error
+import os
 import time
-import sys
+import json
 
 
 def main():
-    # Read credentials from keychain
+    # Check if token is still valid
     try:
         result = subprocess.run(
             ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
             capture_output=True, text=True, timeout=5
         )
-        if result.returncode != 0 or not result.stdout.strip():
-            print("No credentials found")
-            return
-        creds = json.loads(result.stdout.strip())
-    except Exception as e:
-        print(f"Error reading keychain: {e}")
+        if result.returncode == 0 and result.stdout.strip():
+            creds = json.loads(result.stdout.strip())
+            oauth = creds.get("claudeAiOauth", {})
+            exp = oauth.get("expiresAt", 0)
+            exp_sec = exp / 1000 if exp > 9999999999 else exp
+            remaining = exp_sec - time.time()
+
+            if remaining > 3600:  # More than 1 hour left
+                print(f"Token still valid ({remaining/3600:.1f}h remaining), skipping refresh")
+                return
+    except Exception:
+        pass
+
+    # Token expired or expiring soon — run claude to refresh
+    print("Token expired or expiring soon, refreshing via claude CLI...")
+    claude_path = os.path.expanduser("~/local-npm/node_modules/.bin/claude")
+
+    if not os.path.exists(claude_path):
+        print(f"Claude CLI not found at {claude_path}")
         return
-
-    if "claudeAiOauth" not in creds:
-        print("No OAuth data")
-        return
-
-    oauth = creds["claudeAiOauth"]
-    refresh_token = oauth.get("refreshToken")
-    expires_at = oauth.get("expiresAt", 0)
-
-    if not refresh_token:
-        print("No refresh token")
-        return
-
-    # Check if token still valid (with 5 min buffer)
-    now_ms = int(time.time() * 1000)
-    if expires_at and now_ms < expires_at - 300000:
-        remaining_min = (expires_at - now_ms) / 60000
-        print(f"Token still valid ({remaining_min:.0f} min remaining)")
-        return
-
-    # Token expired or expiring soon — refresh it
-    print("Refreshing token...")
-    payload = json.dumps({
-        "grant_type": "refresh_token",
-        "refresh_token": refresh_token,
-        "client_id": "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
-    }).encode()
-
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/oauth/token",
-        data=payload,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
 
     try:
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            result = json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        print(f"Refresh failed: {e.code} {e.reason}")
-        return
+        # Run 'claude --version' — lightweight command that triggers token refresh
+        result = subprocess.run(
+            [claude_path, "--version"],
+            capture_output=True, text=True, timeout=30,
+            env={**os.environ, "NO_COLOR": "1"}
+        )
+        print(f"CLI output: {result.stdout.strip()}")
+        print("Token refresh triggered via CLI")
     except Exception as e:
-        print(f"Refresh error: {e}")
-        return
-
-    new_access = result.get("access_token")
-    if not new_access:
-        print("No access_token in response")
-        return
-
-    # Update credentials
-    oauth["accessToken"] = new_access
-    if "refresh_token" in result:
-        oauth["refreshToken"] = result["refresh_token"]
-    if "expires_at" in result:
-        exp = result["expires_at"]
-        if exp < 9999999999:
-            exp = exp * 1000
-        oauth["expiresAt"] = exp
-
-    # Write back to keychain
-    new_creds_json = json.dumps(creds)
-    subprocess.run(
-        ["security", "delete-generic-password", "-s", "Claude Code-credentials"],
-        capture_output=True, timeout=5
-    )
-    subprocess.run(
-        ["security", "add-generic-password", "-s", "Claude Code-credentials",
-         "-a", "claude-code", "-w", new_creds_json],
-        capture_output=True, timeout=5
-    )
-    print("Token refreshed successfully!")
+        print(f"CLI refresh failed: {e}")
 
 
 if __name__ == "__main__":
